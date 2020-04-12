@@ -1,4 +1,6 @@
 import c4d #pylint: disable=import-error
+import json
+import os
 
 PLUGIN_ID = 1054883
 
@@ -22,8 +24,11 @@ class C4DUXDialog(c4d.gui.GeDialog):
 
     def Command(self, id, msg):
         if id == DLG_IDS.EXECUTE:
-            print "exe"
-
+            with open('/Users/codysorgenfrey1/Downloads/test.json', 'r') as f:
+                uxFile = json.load(data)
+                for layer in uxFile:
+                    print layer
+        
         return True
 
 class C4DUXCommand(c4d.plugins.CommandData):

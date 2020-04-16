@@ -1,13 +1,18 @@
 import c4d #pylint: disable=import-error
 import json
 import os
+import re
 import requests #pylint: disable=import-error
 
 PLUGIN_ID = 1054883
 
 class FigmaHelper():    
     def FetchFigmaDoc(self, file, token):
-        req = requests.get(file, headers={'X-Figma-Token': token})
+        req = requests.get(
+            file, 
+            headers={'X-Figma-Token': token},
+            params={'geometry': 'paths' }
+        )
         return req.json()
 
     def InsertLayerUnder(self, layer, parent):
@@ -16,6 +21,63 @@ class FigmaHelper():
 
         layer.InsertUnder(parent)
         layer.SetAbsPos(pos)
+
+    def PointsFromPath(self, path):
+        closed = False
+        points = []
+
+        commands = re.findall(r'[A-Za-z][0-9\.\s]*', str(path))
+        for command in commands:
+            cType = command[0]
+            coords = re.split(r"\s*", command[1:])
+            if cType == "M":
+                p = c4d.Vector(float(coords[0]), -float(coords[1]), 0.0)
+                points.append(p)
+            if cType == "L":
+                p = c4d.Vector(float(coords[0]), -float(coords[1]), 0.0)
+                points.append(p)
+            if cType == "C":
+                p = c4d.Vector(float(coords[4]), -float(coords[5]), 0.0)
+                points.append(p)
+            if cType == "Z":
+                closed = True
+            
+        return {'count': len(points), 'closed': closed, 'points': points}
+
+    def CreateVector(self, node):
+        spline = c4d.SplineObject(0, c4d.SPLINETYPE_BEZIER)
+        absBBox = node['absoluteBoundingBox']
+
+        spline.SetName(node['name'])
+        
+        nodePos = c4d.Vector(absBBox['x'], -absBBox['y'], 0.0)
+        spline.SetAbsPos(nodePos)
+
+        segments = []
+        pntCount = 0
+        for x in node['fillGeometry']:
+            seg = self.PointsFromPath(x['path'])
+
+            pntCount += seg['count']
+            segments.append(seg)
+
+        spline.ResizeObject(pntCount, len(segments))
+        pIndex = 0
+        for x in range(len(segments)):
+            seg = segments[x]
+            spline.SetSegment(x, seg['count'], seg['closed'])
+            for y in range(seg['count']):
+                p = seg['points'][y]
+                spline.SetPoint(pIndex, p)
+                pIndex += 1
+            
+        if 'visible' in node.keys():
+            spline.SetEditorMode(c4d.MODE_OFF)
+            spline.SetRenderMode(c4d.MODE_OFF)
+
+        spline.Message(c4d.MSG_UPDATE)
+
+        return spline
 
     def CreateRectangle(self, node):
         box = c4d.BaseObject(c4d.Osplinerectangle)
@@ -32,6 +94,10 @@ class FigmaHelper():
         nodePos.y -= absBBox['height'] / 2
         box.SetAbsPos(nodePos)
 
+        if 'visible' in node.keys():
+            box.SetEditorMode(c4d.MODE_OFF)
+            box.SetRenderMode(c4d.MODE_OFF)
+
         return box
 
     def CreateText(self, node):
@@ -39,22 +105,47 @@ class FigmaHelper():
         absBBox = node['absoluteBoundingBox']
         style = node['style']
 
+        # clipmap for font info
+        clipMap = c4d.bitmaps.GeClipMap()
+        fontSettings = clipMap.GetFontDescription(style['fontPostScriptName'], c4d.GE_FONT_NAME_POSTSCRIPT)
+        clipMap.Init(1, 1, 32)
+        clipMap.BeginDraw()
+        clipMap.SetFont(fontSettings, float(style['fontSize']))
+        # c4dTextHeight = clipMap.TextHeight()
+        clipMap.EndDraw()
+        clipMap.Destroy()
+
         text.SetName(node['name'])
         
         text[c4d.PRIM_TEXT_TEXT] = str(node['characters'])
 
         fontData = c4d.FontData()
-        bc = c4d.BaseContainer()
-        bc.SetString(500, 'Arial')
-        bc.SetString(501, '11')
-        bc.SetInt32(502, 400)
-        bc.SetInt32(503, 0)
-        bc.SetString(509, 'Arial')
-        bc.SetString(508, 'ArialMT')
-        fontData.SetFont(bc)
+        fontData.SetFont(fontSettings)
         text[c4d.PRIM_TEXT_FONT] = fontData
 
-        return text
+        alignSwitcher = {
+            'LEFT': 0,
+            'RIGHT': 2,
+            'CENTER': 1,
+            'JUSTIFIED': 1,
+        }
+        text[c4d.PRIM_TEXT_ALIGN] = alignSwitcher[style['textAlignHorizontal']]
+
+        text[c4d.PRIM_TEXT_HEIGHT] = style['fontSize']
+
+        text[c4d.PRIM_TEXT_HSPACING] = style['letterSpacing']
+
+        # figmaLineHeightDifference = float(style['lineHeightPx']) - c4dTextHeight
+        # text[c4d.PRIM_TEXT_VSPACING] = figmaLineHeightDifference
+
+        nodePos = c4d.Vector(absBBox['x'], -absBBox['y'], 0.0)
+        nodePos.y -= float(style['fontSize']) + (float(style['lineHeightPx']) - float(style['fontSize']))
+        text.SetAbsPos(nodePos)
+
+        frame = self.CreateFrame(node)
+        self.InsertLayerUnder(text, frame)
+
+        return frame
 
     def CreateFrame(self, node):
         null = c4d.BaseObject(c4d.Onull)
@@ -66,6 +157,15 @@ class FigmaHelper():
         nodePos.x += absBBox['width'] / 2
         nodePos.y -= absBBox['height'] / 2
         null.SetAbsPos(nodePos)
+
+        if 'visible' in node.keys():
+            null.SetEditorMode(c4d.MODE_OFF)
+            null.SetRenderMode(c4d.MODE_OFF)
+            del node['visible']
+
+        rect = self.CreateRectangle(node)
+        rect.SetName('Frame Bounding Box')
+        self.InsertLayerUnder(rect, null)
 
         return null
 
@@ -85,7 +185,7 @@ class FigmaHelper():
             'LINE': self.CreateRectangle,
             'STAR': self.CreateRectangle,
             'BOOLEAN_OPERATION': self.CreateRectangle,
-            'VECTOR': self.CreateRectangle,
+            'VECTOR': self.CreateVector,
         }
 
         return switcher.get(figmaType, self.CreateFrame)(node)
@@ -101,9 +201,10 @@ class FigmaHelper():
                     childrenNodes = self.RecurseFigmaDoc(layer['children'])
 
                     for childNode in childrenNodes:
-                        self.InsertLayerUnder(childNode, node)
+                            self.InsertLayerUnder(childNode, node)
 
-            nodes.append(node)
+            if node:
+                nodes.append(node)
 
         return nodes
 

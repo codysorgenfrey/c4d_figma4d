@@ -22,27 +22,72 @@ class FigmaHelper():
         layer.InsertUnder(parent)
         layer.SetAbsPos(pos)
 
-    def PointsFromPath(self, path):
+    def SplineFromPath(self, path):
         closed = False
-        points = []
+        segs = []
+        pntCount = 0
 
+        cursor = c4d.Vector(0.0)
         commands = re.findall(r'[A-Za-z][0-9\.\s]*', str(path))
         for command in commands:
             cType = command[0]
             coords = re.split(r"\s*", command[1:])
-            if cType == "M":
-                p = c4d.Vector(float(coords[0]), -float(coords[1]), 0.0)
-                points.append(p)
-            if cType == "L":
-                p = c4d.Vector(float(coords[0]), -float(coords[1]), 0.0)
-                points.append(p)
-            if cType == "C":
-                p = c4d.Vector(float(coords[4]), -float(coords[5]), 0.0)
-                points.append(p)
+            if cType == "M" or cType == "m":
+                if cType == "m":
+                    cursor += c4d.Vector(float(coords[0]), -float(coords[1]), 0.0)
+                else:
+                    cursor = c4d.Vector(float(coords[0]), -float(coords[1]), 0.0)
+                segs.append({
+                    'points': [],
+                    'vl': [],
+                    'vr': [],
+                })
+                segs[-1]['points'].append(cursor)
+                segs[-1]['vl'].append(c4d.Vector(0))
+                segs[-1]['vr'].append(c4d.Vector(0))
+                pntCount += 1
+            if cType == "L" or cType == "l":
+                if cType == "l":
+                    cursor += c4d.Vector(float(coords[0]), -float(coords[1]), 0.0)
+                else:
+                    cursor = c4d.Vector(float(coords[0]), -float(coords[1]), 0.0)
+                segs[-1]['points'].append(cursor)
+                segs[-1]['vl'].append(c4d.Vector(0))
+                segs[-1]['vr'].append(c4d.Vector(0))
+                pntCount += 1
+            if cType == "C" or cType == "c":
+                segs[-1]['vr'][-1] = c4d.Vector(float(coords[0]), -float(coords[1]), 0.0) - cursor
+                if cType == "l":
+                    cursor += c4d.Vector(float(coords[4]), -float(coords[5]), 0.0)
+                else:
+                    cursor = c4d.Vector(float(coords[4]), -float(coords[5]), 0.0)
+                segs[-1]['points'].append(cursor)
+                segs[-1]['vl'].append(c4d.Vector(float(coords[2]), -float(coords[3]), 0.0) - cursor)
+                segs[-1]['vr'].append(c4d.Vector(0))
+                pntCount += 1
             if cType == "Z":
                 closed = True
+
+        spline = c4d.SplineObject(0, c4d.SPLINETYPE_BEZIER)
+        spline.ResizeObject(pntCount, len(segs))
+        segId = 0
+        pntId = 0
+        for seg in segs:
+            segCount = len(seg['points'])
+            spline.SetSegment(segId, segCount, closed)
+            segId += 1
+            for x in range(segCount):
+                p = seg['points'][x]
+                vl = seg['vl'][x]
+                vr = seg['vr'][x]
+                spline.SetPoint(pntId, p)
+                spline.SetTangent(pntId, vl, vr)
+                pntId += 1
+
+        spline[c4d.SPLINEOBJECT_CLOSED] = closed
+        spline.Message(c4d.MSG_UPDATE)
             
-        return {'count': len(points), 'closed': closed, 'points': points}
+        return spline
 
     def CreateVector(self, node):
         connect = c4d.BaseObject(c4d.Oconnector)
@@ -54,22 +99,12 @@ class FigmaHelper():
         connect.SetAbsPos(nodePos)
 
         for x in node['fillGeometry']:
-            segStrings = re.findall(r"[Mm][^Mm]*", str(x['path']))
-            for segString in segStrings:
-                seg = self.PointsFromPath(segString)
-                
-                spline = c4d.SplineObject(0, c4d.SPLINETYPE_BEZIER)
-                spline.ResizeObject(seg['count'])
-                spline[c4d.SPLINEOBJECT_CLOSED] = seg['closed']
-                for y in range(seg['count']):
-                    p = seg['points'][y]
-                    spline.SetPoint(y, p)
-                spline.Message(c4d.MSG_UPDATE)
-                spline.InsertUnder(connect)
+            spline = self.SplineFromPath(x['path'])
+            spline.InsertUnder(connect)
             
         if 'visible' in node.keys():
-            spline.SetEditorMode(c4d.MODE_OFF)
-            spline.SetRenderMode(c4d.MODE_OFF)
+            connect.SetEditorMode(c4d.MODE_OFF)
+            connect.SetRenderMode(c4d.MODE_OFF)
 
         return connect
 

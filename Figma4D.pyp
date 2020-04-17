@@ -45,39 +45,33 @@ class FigmaHelper():
         return {'count': len(points), 'closed': closed, 'points': points}
 
     def CreateVector(self, node):
-        spline = c4d.SplineObject(0, c4d.SPLINETYPE_BEZIER)
+        connect = c4d.BaseObject(c4d.Oconnector)
         absBBox = node['absoluteBoundingBox']
 
-        spline.SetName(node['name'])
+        connect.SetName(node['name'])
         
         nodePos = c4d.Vector(absBBox['x'], -absBBox['y'], 0.0)
-        spline.SetAbsPos(nodePos)
+        connect.SetAbsPos(nodePos)
 
-        segments = []
-        pntCount = 0
         for x in node['fillGeometry']:
-            seg = self.PointsFromPath(x['path'])
-
-            pntCount += seg['count']
-            segments.append(seg)
-
-        spline.ResizeObject(pntCount, len(segments))
-        pIndex = 0
-        for x in range(len(segments)):
-            seg = segments[x]
-            spline.SetSegment(x, seg['count'], seg['closed'])
-            for y in range(seg['count']):
-                p = seg['points'][y]
-                spline.SetPoint(pIndex, p)
-                pIndex += 1
+            segStrings = re.findall(r"[Mm][^Mm]*", str(x['path']))
+            for segString in segStrings:
+                seg = self.PointsFromPath(segString)
+                
+                spline = c4d.SplineObject(0, c4d.SPLINETYPE_BEZIER)
+                spline.ResizeObject(seg['count'])
+                spline[c4d.SPLINEOBJECT_CLOSED] = seg['closed']
+                for y in range(seg['count']):
+                    p = seg['points'][y]
+                    spline.SetPoint(y, p)
+                spline.Message(c4d.MSG_UPDATE)
+                spline.InsertUnder(connect)
             
         if 'visible' in node.keys():
             spline.SetEditorMode(c4d.MODE_OFF)
             spline.SetRenderMode(c4d.MODE_OFF)
 
-        spline.Message(c4d.MSG_UPDATE)
-
-        return spline
+        return connect
 
     def CreateRectangle(self, node):
         box = c4d.BaseObject(c4d.Osplinerectangle)

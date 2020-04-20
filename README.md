@@ -81,3 +81,21 @@ Currently not supported.
 
 ### Components / Instances
 Fully supported, baked down to it's contents.
+
+---
+
+### Fills
+| Feature          | Support              |
+|------------------|----------------------|
+
+---
+
+### Strokes
+| Feature          | Support              |
+|------------------|----------------------|
+
+---
+
+### Effects
+| Feature          | Support              |
+|------------------|----------------------|

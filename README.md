@@ -3,26 +3,34 @@ Figma one-way syncing for Cinema4D
 
 ## Feature Support
 
-Keys:
-* Yes - Fully supported and editable in c4d.
-* Baked - Fully supported but not editable in c4d.
-* Partial - Supported, but may not look correct.
-* Data Only - Values are imported, but not used. There may be incorrect rendering.
-* No - Not supported or imported, may be loss of data or incorrect rendering.
+### Support Values:
+| Value     | Renders correctly | Fully editable in c4d | No loss of data |
+|-----------|-------------------|-----------------------|-----------------|
+| Yes       | ✅                | ✅                    | ✅              |
+| Baked     | ✅                | 🚫                    | ✅              |
+| Partial   | 🤷                | 🤷                    | ✅              |
+| Lossy     | 🤷                | 🤷                    | 🚫              |
+| ???       | 🤷                | 🤷                    | 🤷              |
+| Data Only | 🚫                | 🤷                    | ✅              |
+| No        | 🚫                | 🚫                    | 🚫              | 
 
+---
 
 ### All Layer Types
-| Feature          | Support              |
-|------------------|----------------------|
-| Layer Locked     | No                   |
-| Layer Visibility | Yes                  |
-| Transforms       | Yes                  |
-| Constraints      | Baked                |
-| Blend Mode       | No                   |
-| Fill             | *See fill support*   |
-| Stroke           | *See stroke support* |
-| Effects          | *See effect support* |
-| Export           | No                   |
+| Feature          | Support                          |
+|------------------|----------------------------------|
+| Layer Locked     | Partial                          |
+| Layer Visibility | Yes                              |
+| Transforms       | Yes                              |
+| Constraints      | Baked                            |
+| Blend Mode       | No                               |
+| Opacity          | Yes                              |
+| Fill             | [*See fill support*](#Fills)     |
+| Stroke           | [*See stroke support*](#Strokes) |
+| Effects          | [*See effect support*](#Effects) |
+| Export           | No                               |
+  
+Locked layers are locked in c4d but their children are not.
 
 ---
 
@@ -74,28 +82,68 @@ Due to rendering discrepancy text may be misaligned. We know this is unacceptabl
 
 ---
 
-### Slice
+### Slices
 Currently not supported.  
 
 ---
 
 ### Components / Instances
-Fully supported, baked down to it's contents.
+Fully supported, baked down to its contents.
 
 ---
 
 ### Fills
-| Feature          | Support              |
-|------------------|----------------------|
+| Feature             | Support              |
+|---------------------|----------------------|
+| Stacking Fills      | Yes                  |
+| Fill Opacity        | Yes                  |
+| Fill Blending Modes | No                   |
+| Visibility          | Yes                  |
+| Solid Fill          | Yes                  |
+| Linear Fill         | No                   |
+| Radial Fill         | No                   |
+| Angular Fill        | No                   |
+| Diamond Fill        | No                   |
+| Image Fill          | No                   |
+  
+Stacking will layer c4d materials over eachother and will not use blending modes.  
+Fill layers with visibility turned off will be in the materials pane, but not assigned to the object.
 
 ---
 
 ### Strokes
-| Feature          | Support              |
-|------------------|----------------------|
+| Feature               | Support              |
+|-----------------------|----------------------|
+| Stacking Strokes      | No                   |
+| Stroke Opacity        | No                   |
+| Stroke Blending Modes | No                   |
+| Visibility            | No                   |
+| Solid Stroke          | No                   |
+| Linear Stroke         | No                   |
+| Radial Stroke         | No                   |
+| Angular Stroke        | No                   |
+| Diamond Stroke        | No                   |
+| Image Stroke          | No                   |
+| Stroke Width          | Partial              |
+| Stroke Align          | No                   |
+| Caps                  | ???                  |
+| Joins                 | ???                  |
+| Dashes                | ???                  |
+| Miter Angle           | ???                  |
+  
+Stacking will layer c4d materials over eachother and will not use blending modes.  
+Stroke layers with visibility turned off will be in the materials pane, but not assigned to the object.
 
 ---
 
 ### Effects
-| Feature          | Support              |
-|------------------|----------------------|
+| Feature            | Support              |
+|--------------------|----------------------|
+| Stacking Effects   | Data Only            |
+| Visibility         | Data Only            |
+| Drop Shadow        | Data Only            |
+| Inner Shadow       | Data Only            |
+| Layer Blur         | Data Only            |
+| Background Blur    | Data Only            |
+  
+Effects are applied to the object as a data tag.

@@ -12,6 +12,7 @@ class FigmaHelper():
     _C4DDOC = None
     _FILE = None
     _TOKEN = None
+    _DEPTH = 10.0
 
     def SyncDoc(self):
         self._C4DDOC.StartUndo()
@@ -153,43 +154,58 @@ class FigmaHelper():
             v2=c4d.Vector(nodeTrans[1][0], nodeTrans[1][1], 0),
             v3=c4d.Vector(0, 0, 1),
         )
-
         null.SetMg(nodeMar)
 
-        if 'visible' in node.keys():
+        nodeKeys = node.keys()
+
+        if 'visible' in nodeKeys:
             if not node['visible']:
                 null.SetEditorMode(c4d.MODE_OFF)
                 null.SetRenderMode(c4d.MODE_OFF)
+
+        if 'opacity' in nodeKeys:
+            disTag = c4d.BaseTag(c4d.Tdisplay)
+            disTag[c4d.DISPLAYTAG_AFFECT_VISIBILITY] = True
+            disTag[c4d.DISPLAYTAG_VISIBILITY] = float(node['opacity'])
+            null.InsertTag(disTag)
+
+        if 'locked' in nodeKeys:
+            if bool(node['locked']):
+                proTag = c4d.BaseTag(c4d.Tprotection)
+                null.InsertTag(proTag)
         
         return null
 
     def CreateFill(self, node, geo):
         extrude = c4d.BaseObject(c4d.Oextrude)
+        extrude.SetName(node['name'] + ' Fill')
+        extrude[c4d.EXTRUDEOBJECT_MOVE] = c4d.Vector(0, 0, self._DEPTH)
 
-        for x in range(len(node['fills'])):
+        for x in range(len(node['fills']) - 1, -1, -1):
             fill = node['fills'][x]
-            if not 'visible' in fill.keys():
-                fill['visible'] = True
 
-            if fill['visible']:
-                mat = c4d.BaseMaterial(c4d.Mmaterial)
-                mat.SetName(str(node['name']) + " Fill " + str(x + 1))
-                
-                if fill['type'] == 'SOLID':
-                    color = fill['color']
-                    mat[c4d.MATERIAL_COLOR_COLOR] = c4d.Vector(color['r'], color['g'], color['b'])
+            mat = c4d.Material()
+            mat.SetName(str(node['name']) + " Fill " + str(x + 1))
+            
+            if fill['type'] == 'SOLID':
+                color = fill['color']
+                mat[c4d.MATERIAL_COLOR_COLOR] = c4d.Vector(color['r'], color['g'], color['b'])
 
-                    if 'opacity' in fill.keys():
-                        aShader = c4d.BaseShader(c4d.Xcolor)
-                        aShader[c4d.COLORSHADER_COLOR] = c4d.Vector(fill['opacity'])
-                        mat[c4d.MATERIAL_ALPHA_SHADER]
-                
-                self._C4DDOC.InsertMaterial(mat)
-                self._C4DDOC.AddUndo(c4d.UNDOTYPE_NEW, mat)
-
-                tex = extrude.MakeTag(c4d.Ttexture)
-                tex[c4d.TEXTURETAG_PROJECTION] = 6 # UVW Mapping
-                tex.SetMaterial(mat)
+                if 'opacity' in fill.keys():
+                    mat.SetChannelState(c4d.CHANNEL_ALPHA, True)
+                    aShader = c4d.BaseShader(c4d.Xcolor)
+                    aShader[c4d.COLORSHADER_COLOR] = c4d.Vector(fill['opacity'])
+                    mat[c4d.MATERIAL_ALPHA_SHADER] = aShader
+                    mat.InsertShader(aShader)
+            
+            self._C4DDOC.InsertMaterial(mat)
+            self._C4DDOC.AddUndo(c4d.UNDOTYPE_NEW, mat)
+            
+            if 'visible' in fill.keys():
+                if bool(fill['visible']):
+                    tex = extrude.MakeTag(c4d.Ttexture)
+                    tex[c4d.TEXTURETAG_PROJECTION] = 6 # UVW Mapping
+                    tex.SetMaterial(mat)
 
         geo.InsertUnder(extrude)
 
@@ -316,21 +332,25 @@ class FigmaHelper():
         group = self.CreateNodeGroup(node)
         absBBox = node['absoluteBoundingBox']
 
-        # fill rect
-        if len(node['fills']) > 0:
-            rect = c4d.BaseObject(c4d.Osplinerectangle)
-            rect[c4d.PRIM_RECTANGLE_WIDTH] = float(absBBox['width'])
-            rect[c4d.PRIM_RECTANGLE_HEIGHT] = float(absBBox['height'])
-            
-            fill = self.CreateFill(node, rect)
-            fill.SetName(node['name'] + ' Bounding Box')
-            
-            nodePos = c4d.Vector(absBBox['x'], -absBBox['y'], 0.0)
-            nodePos.x += absBBox['width'] / 2
-            nodePos.y -= absBBox['height'] / 2
-            fill.SetAbsPos(nodePos)
+        # layer bounds
+        rect = c4d.BaseObject(c4d.Osplinerectangle)
+        rect[c4d.PRIM_RECTANGLE_WIDTH] = float(absBBox['width'])
+        rect[c4d.PRIM_RECTANGLE_HEIGHT] = float(absBBox['height'])
+        rect.SetName(node['name'] + " Bounding Box")
+        
+        nodePos = c4d.Vector(absBBox['x'], -absBBox['y'], 0.0)
+        nodePos.x += absBBox['width'] / 2
+        nodePos.y -= absBBox['height'] / 2
 
+        if len(node['fills']) > 0:
+            fill = self.CreateFill(node, rect)
+            fill.SetAbsPos(nodePos)
             self.InsertLayerUnder(fill, group)
+        elif len(node['strokes']) > 0:
+            pass
+        else:
+            rect.SetAbsPos(nodePos)
+            self.InsertLayerUnder(rect, group)
 
         return group
 

@@ -21,6 +21,7 @@ Figma one-way syncing for Cinema4D
 |------------------|----------------------------------|
 | Layer Locked     | Partial                          |
 | Layer Visibility | Yes                              |
+| Layer Masking    | No                               |
 | Transforms       | Yes                              |
 | Constraints      | Baked                            |
 | Blend Mode       | No                               |
@@ -114,18 +115,18 @@ Fill layers with visibility turned off will be in the materials pane, but not as
 ### Strokes
 | Feature               | Support              |
 |-----------------------|----------------------|
-| Stacking Strokes      | No                   |
-| Stroke Opacity        | No                   |
+| Stacking Strokes      | Yes                  |
+| Stroke Opacity        | Yes                  |
 | Stroke Blending Modes | No                   |
-| Visibility            | No                   |
-| Solid Stroke          | No                   |
+| Visibility            | Yes                  |
+| Solid Stroke          | Yes                  |
 | Linear Stroke         | No                   |
 | Radial Stroke         | No                   |
 | Angular Stroke        | No                   |
 | Diamond Stroke        | No                   |
 | Image Stroke          | No                   |
-| Stroke Width          | Partial              |
-| Stroke Align          | No                   |
+| Stroke Width          | Yes                  |
+| Stroke Align          | Yes                  |
 | Caps                  | ???                  |
 | Joins                 | ???                  |
 | Dashes                | ???                  |

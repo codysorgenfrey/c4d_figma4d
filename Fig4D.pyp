@@ -176,22 +176,23 @@ class FigmaHelper():
         
         return null
 
-    def CreateFill(self, node, geo):
+    def CreateFill(self, geo, fills, name):
         extrude = c4d.BaseObject(c4d.Oextrude)
-        extrude.SetName(node['name'] + ' Fill')
         extrude[c4d.EXTRUDEOBJECT_MOVE] = c4d.Vector(0, 0, self._DEPTH)
 
-        for x in range(len(node['fills']) - 1, -1, -1):
-            fill = node['fills'][x]
+        for x in range(len(fills) - 1, -1, -1):
+            fill = fills[x]
 
             mat = c4d.Material()
-            mat.SetName(str(node['name']) + " Fill " + str(x + 1))
+            mat.SetName(str(name) + " Fill " + str(x + 1))
+
+            fillKeys = fill.keys()
             
             if fill['type'] == 'SOLID':
                 color = fill['color']
                 mat[c4d.MATERIAL_COLOR_COLOR] = c4d.Vector(color['r'], color['g'], color['b'])
 
-                if 'opacity' in fill.keys():
+                if 'opacity' in fillKeys:
                     mat.SetChannelState(c4d.CHANNEL_ALPHA, True)
                     aShader = c4d.BaseShader(c4d.Xcolor)
                     aShader[c4d.COLORSHADER_COLOR] = c4d.Vector(fill['opacity'])
@@ -200,16 +201,82 @@ class FigmaHelper():
             
             self._C4DDOC.InsertMaterial(mat)
             self._C4DDOC.AddUndo(c4d.UNDOTYPE_NEW, mat)
-            
-            if 'visible' in fill.keys():
-                if bool(fill['visible']):
-                    tex = extrude.MakeTag(c4d.Ttexture)
-                    tex[c4d.TEXTURETAG_PROJECTION] = 6 # UVW Mapping
-                    tex.SetMaterial(mat)
 
-        geo.InsertUnder(extrude)
+            if not 'visible' in fillKeys: fill['visible'] = True
+            if bool(fill['visible']):
+                tex = extrude.MakeTag(c4d.Ttexture)
+                tex[c4d.TEXTURETAG_PROJECTION] = 6 # UVW Mapping
+                tex.SetMaterial(mat)
+
+        geoClone = geo.GetClone()
+        geoClone.InsertUnder(extrude)
 
         return extrude
+    
+    def CreateStrokeProfile(self, weight, alignment, name):
+        profile = c4d.SplineObject(4, c4d.SPLINETYPE_LINEAR)
+        profile.SetName(name + " Profile")
+        profile[c4d.SPLINEOBJECT_CLOSED] = True
+
+        p = []
+        if alignment == 'OUTSIDE':
+            p.append(c4d.Vector(0))
+            p.append(c4d.Vector(float(weight), 0, 0))
+            p.append(c4d.Vector(float(weight), -self._DEPTH, 0))
+            p.append(c4d.Vector(0, -self._DEPTH, 0))
+        elif alignment == 'INSIDE':
+            p.append(c4d.Vector(0))
+            p.append(c4d.Vector(-float(weight), 0, 0))
+            p.append(c4d.Vector(-float(weight), -self._DEPTH, 0))
+            p.append(c4d.Vector(0, -self._DEPTH, 0))
+        else:
+            halfWidth = float(weight) / 2
+            p.append(c4d.Vector(-halfWidth, 0, 0))
+            p.append(c4d.Vector(halfWidth, 0, 0))
+            p.append(c4d.Vector(halfWidth, -self._DEPTH, 0))
+            p.append(c4d.Vector(-halfWidth, -self._DEPTH, 0))
+        profile.SetAllPoints(p)
+        profile.Message(c4d.MSG_UPDATE)
+
+        return profile
+
+    def CreateStroke(self, geo, strokes, weight, alignment, name):
+        sweep = c4d.BaseObject(c4d.Osweep)
+        profile = self.CreateStrokeProfile(weight, alignment, name)
+
+        for x in range(len(strokes) - 1, -1, -1):
+            stroke = strokes[x]
+
+            mat = c4d.Material()
+            mat.SetName(str(name) + " Stroke " + str(x + 1))
+
+            strokeKeys = stroke.keys()
+            
+            if stroke['type'] == 'SOLID':
+                color = stroke['color']
+                mat[c4d.MATERIAL_COLOR_COLOR] = c4d.Vector(color['r'], color['g'], color['b'])
+
+                if 'opacity' in strokeKeys:
+                    mat.SetChannelState(c4d.CHANNEL_ALPHA, True)
+                    aShader = c4d.BaseShader(c4d.Xcolor)
+                    aShader[c4d.COLORSHADER_COLOR] = c4d.Vector(stroke['opacity'])
+                    mat[c4d.MATERIAL_ALPHA_SHADER] = aShader
+                    mat.InsertShader(aShader)
+            
+            self._C4DDOC.InsertMaterial(mat)
+            self._C4DDOC.AddUndo(c4d.UNDOTYPE_NEW, mat)
+
+            if not 'visible' in strokeKeys: stroke['visible'] = True
+            if bool(stroke['visible']):
+                tex = sweep.MakeTag(c4d.Ttexture)
+                tex[c4d.TEXTURETAG_PROJECTION] = 6 # UVW Mapping
+                tex.SetMaterial(mat)
+
+        geoClone = geo.GetClone()
+        geoClone.InsertUnder(sweep)
+        profile.InsertUnder(sweep)
+
+        return sweep
 
     def CreateVector(self, node):
         group = self.CreateNodeGroup(node)
@@ -220,10 +287,11 @@ class FigmaHelper():
         smcSettings[c4d.MDATA_OPTIMIZE_POLYGONS] = False
         smcSettings[c4d.MDATA_OPTIMIZE_UNUSEDPOINTS] = True
 
+        fillGeo = []
+        strokeGeo = []
+
+        # Get geo from fill
         if len(node['fillGeometry']) > 0:
-            fills = c4d.BaseObject(c4d.Oconnector)
-            fills[c4d.CONNECTOBJECT_WELD] = False
-            fills.SetName(node['name'] + " Fills")
             for x in node['fillGeometry']:
                 spline = self.SplineFromPath(x['path'])
                 c4d.utils.SendModelingCommand(
@@ -232,13 +300,12 @@ class FigmaHelper():
                     mode=c4d.MODELINGCOMMANDMODE_ALL,
                     bc=smcSettings,
                 )
-                spline.InsertUnder(fills)
-            fills.InsertUnder(group)
+                spline.SetName(node['name'] + " Fill Geometry")
+                fillGeo.append(spline)
         
+        # Get geo from stroke
         if len(node['strokeGeometry']) > 0:
-            strokes = c4d.BaseObject(c4d.Oconnector)
-            strokes[c4d.CONNECTOBJECT_WELD] = False
-            strokes.SetName(node['name'] + " Strokes")
+            strokeGeo = []
             for x in node['strokeGeometry']:
                 spline = self.SplineFromPath(x['path'])
                 c4d.utils.SendModelingCommand(
@@ -247,8 +314,51 @@ class FigmaHelper():
                     mode=c4d.MODELINGCOMMANDMODE_ALL,
                     bc=smcSettings,
                 )
-                spline.InsertUnder(strokes)
-            strokes.InsertUnder(group)
+                spline.SetName(node['name'] + " Stroke Geometry")
+                strokeGeo.append(spline)
+
+        # Create fill
+        if len(node['fills']) > 0:
+            # Put multiple geos under connect
+            if len(fillGeo) > 1:
+                connect = c4d.BaseObject(c4d.Oconnector)
+                connect[c4d.CONNECTOBJECT_WELD] = False
+                for spline in fillGeo:
+                    spline.InsertUnder(connect)
+                fillGeo = connect
+            else:
+                fillGeo = fillGeo[0]
+
+            # extrude fill
+            fill = self.CreateFill(fillGeo, node['fills'], node['name'])
+            fill.SetName(node['name'] + " Fill")
+            fill.InsertUnder(group)
+
+        # Create Stroke
+        if len(node['strokes']) > 0:
+            # alter geo for position of stroke
+            # if node['strokeAlign'] != "CENTER":
+            #     c4d.utils.SendModelingCommand(
+            #         command=c4d.MCOMMAND_EXPLODESEGMENTS,
+            #         list=[strokeGeo],
+            #         doc=self._C4DDOC,
+            #     )
+
+            # Put multiple geos under connect
+            if len(strokeGeo) > 1:
+                connect = c4d.BaseObject(c4d.Oconnector)
+                connect[c4d.CONNECTOBJECT_WELD] = False
+                for spline in strokeGeo:
+                    spline.InsertUnder(connect)
+                strokeGeo = connect
+            else:
+                strokeGeo = strokeGeo[0]
+
+            # extrude stroke
+            stroke = self.CreateFill(strokeGeo, node['strokes'], node['name'])
+            stroke.SetName(node['name'] + " Stroke")
+            stroke.SetRelPos(c4d.Vector(0, 0, -self._DEPTH))
+            stroke.InsertUnder(group)
 
         return group
 
@@ -334,21 +444,30 @@ class FigmaHelper():
 
         # layer bounds
         rect = c4d.BaseObject(c4d.Osplinerectangle)
+        rect.SetName(node['name'] + " Bounding Box")
         rect[c4d.PRIM_RECTANGLE_WIDTH] = float(absBBox['width'])
         rect[c4d.PRIM_RECTANGLE_HEIGHT] = float(absBBox['height'])
-        rect.SetName(node['name'] + " Bounding Box")
         
         nodePos = c4d.Vector(absBBox['x'], -absBBox['y'], 0.0)
         nodePos.x += absBBox['width'] / 2
         nodePos.y -= absBBox['height'] / 2
 
+        # fill
         if len(node['fills']) > 0:
-            fill = self.CreateFill(node, rect)
+            fill = self.CreateFill(rect, node['fills'], node['name'])
+            fill.SetName(node['name'] + " Fill")
             fill.SetAbsPos(nodePos)
             self.InsertLayerUnder(fill, group)
-        elif len(node['strokes']) > 0:
-            pass
-        else:
+        
+        # stroke
+        if len(node['strokes']) > 0:
+            stroke = self.CreateStroke(rect, node['strokes'], node['strokeWeight'], node['strokeAlign'], node['name'])
+            stroke.SetName(node['name'] + " Stroke")
+            stroke.SetAbsPos(c4d.Vector(nodePos.x, nodePos.y, -self._DEPTH))
+            self.InsertLayerUnder(stroke, group)
+        
+        # spline if no fill or stroke
+        if len(node['fills']) == 0 and len(node['strokes']) == 0:
             rect.SetAbsPos(nodePos)
             self.InsertLayerUnder(rect, group)
 

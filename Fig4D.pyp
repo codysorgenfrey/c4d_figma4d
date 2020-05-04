@@ -141,6 +141,55 @@ class FigmaHelper():
             
         return spline
 
+    def ConnectSplines(self, splines):
+        pntCnt = 0
+        segCnt = 0
+        closed = False
+
+        for spline in splines:
+            thisSegCnt = spline.GetSegmentCount()
+            if thisSegCnt == 0: thisSegCnt = 1
+            segCnt += thisSegCnt
+            pntCnt += spline.GetPointCount()
+
+        newSpline = c4d.SplineObject(0, c4d.SPLINETYPE_BEZIER)
+        newSpline.ResizeObject(pntCnt, segCnt)
+
+        pntOff = 0
+        segOff = 0
+        tanOff = 0
+        for x in range(len(splines)):
+            spline = splines[x]
+            if spline.IsClosed(): closed = True
+            pnts = spline.GetPointCount()
+            segs = spline.GetSegmentCount()
+            tans = spline.GetTangentCount()
+
+            for y in range(pnts):
+                pnt = spline.GetPoint(y)
+                newSpline.SetPoint(pntOff + y, pnt)
+
+            if segs > 0:
+                for y in range(segs):
+                    seg = spline.GetSegment(y)
+                    newSpline.SetSegment(segOff + y, seg['cnt'], seg['closed'])
+            else:
+                newSpline.SetSegment(segOff, pnts, spline.IsClosed())
+
+            for y in range(tans):
+                tan = spline.GetTangent(y)
+                newSpline.SetTangent(tanOff + y, tan['vl'], tan['vr'])
+
+            pntOff += pnts
+            if segs == 0: segs = 1
+            segOff += segs
+            tanOff += tans
+
+        newSpline[c4d.SPLINEOBJECT_CLOSED] = closed
+        newSpline.Message(c4d.MSG_UPDATE)
+
+        return newSpline
+
     def CreateNodeGroup(self, node):
         null = c4d.BaseObject(c4d.Onull)
         absBBox = node['absoluteBoundingBox']
@@ -302,10 +351,10 @@ class FigmaHelper():
                 )
                 spline.SetName(node['name'] + " Fill Geometry")
                 fillGeo.append(spline)
+        fillGeo = self.ConnectSplines(fillGeo)
         
         # Get geo from stroke
         if len(node['strokeGeometry']) > 0:
-            strokeGeo = []
             for x in node['strokeGeometry']:
                 spline = self.SplineFromPath(x['path'])
                 c4d.utils.SendModelingCommand(
@@ -316,43 +365,46 @@ class FigmaHelper():
                 )
                 spline.SetName(node['name'] + " Stroke Geometry")
                 strokeGeo.append(spline)
+        strokeGeo = self.ConnectSplines(strokeGeo)
 
         # Create fill
         if len(node['fills']) > 0:
-            # Put multiple geos under connect
-            if len(fillGeo) > 1:
-                connect = c4d.BaseObject(c4d.Oconnector)
-                connect[c4d.CONNECTOBJECT_WELD] = False
-                for spline in fillGeo:
-                    spline.InsertUnder(connect)
-                fillGeo = connect
-            else:
-                fillGeo = fillGeo[0]
-
-            # extrude fill
             fill = self.CreateFill(fillGeo, node['fills'], node['name'])
             fill.SetName(node['name'] + " Fill")
             fill.InsertUnder(group)
 
         # Create Stroke
         if len(node['strokes']) > 0:
-            # alter geo for position of stroke
-            # if node['strokeAlign'] != "CENTER":
-            #     c4d.utils.SendModelingCommand(
-            #         command=c4d.MCOMMAND_EXPLODESEGMENTS,
-            #         list=[strokeGeo],
-            #         doc=self._C4DDOC,
-            #     )
+            # alter geo for position of stroke if shape is closed
+            if node['strokeAlign'] != "CENTER" and len(node['fillGeometry']) > 0:
+                if node['strokeAlign'] == "INSIDE":
+                    boolMode = c4d.SPLINEBOOL_MODE_AND
+                else:
+                    boolMode = c4d.SPLINEBOOL_MODE_AMINUSB
 
-            # Put multiple geos under connect
-            if len(strokeGeo) > 1:
-                connect = c4d.BaseObject(c4d.Oconnector)
-                connect[c4d.CONNECTOBJECT_WELD] = False
-                for spline in strokeGeo:
-                    spline.InsertUnder(connect)
-                strokeGeo = connect
-            else:
-                strokeGeo = strokeGeo[0]
+                trimmedStrokes = []
+
+                # explode spline segments
+                c4d.utils.SendModelingCommand(
+                    command=c4d.MCOMMAND_EXPLODESEGMENTS,
+                    list=[strokeGeo],
+                )
+
+                for seg in strokeGeo.GetChildren():
+                    # filter out random lines
+                    if seg.GetPointCount() > 2:
+                        # perform bool
+                        newSeg = c4d.utils.BooleanSplines(
+                            seg,
+                            [fillGeo],
+                            self._C4DDOC,
+                            self._C4DDOC.GetActiveBaseDraw(),
+                            c4d.SPLINEBOOL_AXIS_XY,
+                            boolMode
+                        )
+                        trimmedStrokes.append(newSeg)
+                
+                strokeGeo = self.ConnectSplines(trimmedStrokes)
 
             # extrude stroke
             stroke = self.CreateFill(strokeGeo, node['strokes'], node['name'])
